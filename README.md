@@ -1,6 +1,6 @@
 # User Leptos App
 
-Aplicación full-stack con **Leptos 0.8** que demuestra autenticación con cookies, CRUD de usuarios, y arquitectura en capas.
+Aplicación full-stack con **Leptos 0.9** que demuestra autenticación con cookies, CRUD de usuarios, y arquitectura en capas.
 
 ## Características
 
@@ -83,7 +83,7 @@ cargo test
 
 | Crate | Uso |
 |-------|-----|
-| `leptos` 0.8 | Framework reactivo full-stack |
+| `leptos` 0.9 | Framework reactivo full-stack |
 | `axum` | Servidor HTTP |
 | `sqlx` | Conexión SQLite asíncrona |
 | `bcrypt` | Hash de contraseñas |
@@ -137,6 +137,11 @@ CREATE TABLE sessions (
 | `/` | Página de inicio |
 | `/login` | Formulario de login |
 | `/users` | Gestión de usuarios (requiere auth) |
+
+## Documentación y Recursos
+
+- **Artículo:** [Arquitectura Full-Stack en Rust: Estructurando aplicaciones con Leptos sin morir en el intento](https://juredev.com/blog/2026/02/full-stack-en-rust-estructurando-aplicaciones-con-leptos/)
+- **Documento de arquitectura:** [docs/arquitectura-leptos-fullstack.md](docs/arquitectura-leptos-fullstack.md)
 
 ## Licencia
 

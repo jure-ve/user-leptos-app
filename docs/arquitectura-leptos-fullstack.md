@@ -1,5 +1,7 @@
 # Leptos: Arquitectura Full-Stack en Rust sin morir en el intento
 
+- Articulo: [Arquitectura Full-Stack en Rust: Estructurando aplicaciones con Leptos sin morir en el intento](https://juredev.com/blog/2026/02/full-stack-en-rust-estructurando-aplicaciones-con-leptos/)
+
 ## Recursos
 
 - [Código completo en GitHub](https://github.com/jure-ve/user-leptos-app)
