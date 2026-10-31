@@ -166,8 +166,12 @@ CREATE TABLE sessions (
 
 ## Documentación y Recursos
 
-- **Artículo:** [Arquitectura Full-Stack en Rust: Estructurando aplicaciones con Leptos sin morir en el intento](https://juredev.com/blog/2026/02/full-stack-en-rust-estructurando-aplicaciones-con-leptos/)
-- **Documento de arquitectura:** [docs/arquitectura-leptos-fullstack.md](docs/arquitectura-leptos-fullstack.md)
+- **Artículos:**
+  - [Arquitectura Full-Stack en Rust: Estructurando aplicaciones con Leptos sin morir en el intento](https://juredev.com/blog/2026/02/full-stack-en-rust-estructurando-aplicaciones-con-leptos/)
+  - [Autorización real en Leptos: protege tus server functions, no solo tus rutas](https://juredev.com/blog/2026/10/autorizacion-real-en-leptos-protege-tus-server-functions/)
+- **Documentos de referencia:**
+  - [docs/arquitectura-leptos-fullstack.md](docs/arquitectura-leptos-fullstack.md)
+  - [docs/autorizacion-server-functions.md](docs/autorizacion-server-functions.md)
 
 ## Licencia
 
