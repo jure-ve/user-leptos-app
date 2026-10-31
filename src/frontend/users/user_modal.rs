@@ -1,32 +1,7 @@
+use crate::api::users::{create_user, update_user};
 use crate::domain::user::{CreateUserRequest, UpdateUserRequest, User, UserRole};
 use crate::domain::validation::validate;
 use leptos::prelude::*;
-
-// Server function for creating users
-#[server(CreateUser, "/api")]
-pub async fn create_user(request: CreateUserRequest) -> Result<User, ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        crate::server::users::create_user(request).await
-    }
-    #[cfg(not(feature = "ssr"))]
-    {
-        Err(ServerFnError::new("SSR only"))
-    }
-}
-
-// Server function for updating users
-#[server(UpdateUser, "/api")]
-pub async fn update_user(id: i64, request: UpdateUserRequest) -> Result<User, ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        crate::server::users::update_user(id, request).await
-    }
-    #[cfg(not(feature = "ssr"))]
-    {
-        Err(ServerFnError::new("SSR only"))
-    }
-}
 
 #[derive(Clone)]
 pub enum ModalMode {
@@ -47,6 +22,8 @@ struct UpdateInput {
 #[component]
 pub fn UserModal(
     mode: ModalMode,
+    /// Id del usuario autenticado, para no permitir que se quite su rol de admin.
+    current_user_id: Option<i64>,
     on_save: Callback<Result<User, String>>,
     on_close: Callback<()>,
 ) -> impl IntoView {
@@ -63,6 +40,8 @@ pub fn UserModal(
     let submitting = RwSignal::new(false);
 
     let user_id = initial_user.as_ref().map(|u| u.id);
+    // Misma regla que `policy::can_set_role`: el servidor la vuelve a comprobar.
+    let editing_self = is_edit && user_id == current_user_id;
 
     // Create action
     let create_action = Action::new(move |input: &CreateInput| {
@@ -199,11 +178,14 @@ pub fn UserModal(
                                     let value = event_target_value(&ev);
                                     role.set(UserRole::from_str(&value));
                                 }
-                                disabled=move || submitting.get()
+                                disabled=move || submitting.get() || editing_self
                             >
                                 <option value="user" selected=move || role.get() == UserRole::User>"Usuario"</option>
                                 <option value="admin" selected=move || role.get() == UserRole::Admin>"Administrador"</option>
                             </select>
+                            {editing_self.then(|| view! {
+                                <small class="text-muted">"No puedes cambiar tu propio rol"</small>
+                            })}
                         </div>
                     })}
 

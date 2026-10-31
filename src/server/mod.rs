@@ -1,6 +1,6 @@
-#[cfg(feature = "ssr")]
-pub mod auth;
-#[cfg(feature = "ssr")]
+//! Código exclusivo del servidor (`#[cfg(feature = "ssr")]` en `lib.rs`).
+pub mod app;
 pub mod db;
-#[cfg(feature = "ssr")]
+pub mod guards;
+pub mod session;
 pub mod users;

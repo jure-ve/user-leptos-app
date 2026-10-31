@@ -1,3 +1,4 @@
+use crate::api::auth::Login;
 use crate::domain::user::LoginCredentials;
 use crate::domain::validation::validate;
 use crate::frontend::state::use_auth;
@@ -15,10 +16,10 @@ pub fn LoginForm() -> impl IntoView {
 
     // Watch for login action result
     Effect::new(move |_| {
-        let pending = auth.login_action.pending().get();
+        let pending = auth.login.pending().get();
         submitting.set(pending);
 
-        if let Some(result) = auth.login_action.value().get() {
+        if let Some(result) = auth.login.value().get() {
             if let Err(e) = result {
                 error.set(Some(e.to_string()));
             }
@@ -40,7 +41,7 @@ pub fn LoginForm() -> impl IntoView {
             return;
         }
 
-        auth.login_action.dispatch(credentials);
+        auth.login.dispatch(Login { credentials });
     };
 
     view! {

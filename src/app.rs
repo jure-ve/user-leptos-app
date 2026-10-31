@@ -1,11 +1,12 @@
 use crate::frontend::auth::LoginPage;
 use crate::frontend::layouts::MainLayout;
+use crate::frontend::state::provide_auth;
 use crate::frontend::users::UsersListPage;
 use leptos::prelude::*;
 use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
 use leptos_router::{
-    components::{Route, Router, Routes},
-    StaticSegment,
+    components::{ProtectedRoute, Route, Router, Routes},
+    SsrMode, StaticSegment,
 };
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
@@ -29,6 +30,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();
+    let auth = provide_auth();
 
     view! {
         <Stylesheet id="leptos" href="/pkg/user-leptos-app.css"/>
@@ -38,8 +40,28 @@ pub fn App() -> impl IntoView {
             <MainLayout>
                 <Routes fallback=|| view! { <NotFound/> }>
                     <Route path=StaticSegment("") view=HomePage/>
-                    <Route path=StaticSegment("login") view=LoginPage/>
-                    <Route path=StaticSegment("users") view=UsersListPage/>
+                    // Solo para invitados: con sesión, redirige a /users.
+                    <ProtectedRoute
+                        path=StaticSegment("login")
+                        view=LoginPage
+                        condition=move || auth.is_authenticated().map(|logged_in| !logged_in)
+                        redirect_path=|| "/users"
+                        ssr=SsrMode::Async
+                    />
+                    // Requiere sesión. Con `SsrMode::Async` el servidor espera a
+                    // resolver la sesión antes de enviar cabeceras, así que un
+                    // visitante anónimo recibe un 302 real a /login, sin llegar
+                    // a ver la página ni depender de que cargue el WASM.
+                    //
+                    // Ojo: esto es UX. Los datos están protegidos porque cada
+                    // server function de `crate::api` exige sesión por su cuenta.
+                    <ProtectedRoute
+                        path=StaticSegment("users")
+                        view=UsersListPage
+                        condition=move || auth.is_authenticated()
+                        redirect_path=|| "/login"
+                        ssr=SsrMode::Async
+                    />
                 </Routes>
             </MainLayout>
         </Router>

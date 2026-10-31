@@ -1,49 +1,28 @@
-use crate::domain::state::AuthState;
+use crate::api::users::{delete_user, list_users};
+use crate::domain::error::AppError;
+use crate::domain::policy;
 use crate::domain::user::User;
 use crate::frontend::state::use_auth;
 use crate::frontend::users::user_modal::{ModalMode, UserModal};
 use crate::frontend::users::user_row::UserRow;
 use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
 
-// Server function for listing users
-#[server(ListUsers, "/api")]
-pub async fn list_users() -> Result<Vec<User>, ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        crate::server::users::list_users().await
-    }
-    #[cfg(not(feature = "ssr"))]
-    {
-        Err(ServerFnError::new("SSR only"))
-    }
-}
-
-// Server function for deleting users
-#[server(DeleteUser, "/api")]
-pub async fn delete_user(id: i64) -> Result<(), ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        crate::server::users::delete_user(id).await
-    }
-    #[cfg(not(feature = "ssr"))]
-    {
-        Err(ServerFnError::new("SSR only"))
-    }
-}
-
-/// Users list page with CRUD operations
+/// Users list page with CRUD operations.
+///
+/// La ruta está envuelta en `<ProtectedRoute/>` (ver `app.rs`), así que aquí
+/// ya no hace falta un `Effect` que redirija a `/login`.
 #[component]
 pub fn UsersListPage() -> impl IntoView {
     let auth = use_auth();
-    let navigate = use_navigate();
 
-    // Redirect to login if not authenticated
-    Effect::new(move |_| {
-        if let AuthState::Unauthenticated = auth.state.get() {
-            navigate("/login", Default::default());
-        }
+    // ¿Puede el usuario actual gestionar usuarios? Se usa la MISMA regla que
+    // aplica el servidor (`domain::policy`), solo para adaptar la UI.
+    let can_manage = Memo::new(move |_| {
+        auth.user()
+            .map(|u| policy::can_manage_users(&u).is_ok())
+            .unwrap_or(false)
     });
+    let current_user_id = Memo::new(move |_| auth.user().map(|u| u.id));
 
     // Refresh trigger
     let refresh_trigger = RwSignal::new(0);
@@ -58,6 +37,9 @@ pub fn UsersListPage() -> impl IntoView {
     let show_modal = RwSignal::new(false);
     let modal_mode = RwSignal::new(Option::<ModalMode>::None);
 
+    // Error de la última acción (p. ej. un 403 devuelto por el servidor)
+    let action_error = RwSignal::new(Option::<String>::None);
+
     // Delete action
     let delete_action = Action::new(move |id: &i64| {
         let id = *id;
@@ -65,10 +47,13 @@ pub fn UsersListPage() -> impl IntoView {
     });
 
     // Watch delete action and refresh
-    Effect::new(move |_| {
-        if let Some(Ok(())) = delete_action.value().get() {
+    Effect::new(move |_| match delete_action.value().get() {
+        Some(Ok(())) => {
+            action_error.set(None);
             refresh_trigger.update(|v| *v += 1);
         }
+        Some(Err(e)) => action_error.set(Some(e.to_string())),
+        None => {}
     });
 
     // Open create modal
@@ -105,15 +90,26 @@ pub fn UsersListPage() -> impl IntoView {
         <div class="users-page">
             <div class="page-header">
                 <h1>"Gestión de Usuarios"</h1>
-                <button class="btn btn-primary" on:click=open_create_modal>
-                    "+ Nuevo Usuario"
-                </button>
+                <Transition fallback=|| ()>
+                    {move || can_manage.get().then(|| view! {
+                        <button class="btn btn-primary" on:click=open_create_modal>
+                            "+ Nuevo Usuario"
+                        </button>
+                    })}
+                </Transition>
             </div>
+
+            {move || action_error.get().map(|msg| view! {
+                <div class="form-error">
+                    <span class="error-icon">"⚠"</span>
+                    {msg}
+                </div>
+            })}
 
             <div class="users-table-container">
                 <Suspense fallback=move || view! { <div class="loading">"Cargando usuarios..."</div> }>
                     {move || {
-                        users.get().map(|result: Result<Vec<User>, ServerFnError>| {
+                        users.get().map(|result: Result<Vec<User>, AppError>| {
                             match result {
                                 Ok(user_list) => {
                                     if user_list.is_empty() {
@@ -139,9 +135,12 @@ pub fn UsersListPage() -> impl IntoView {
                                                         each=move || user_list.clone()
                                                         key=|user| user.id
                                                         children=move |user| {
+                                                            let is_self = current_user_id.get_untracked() == Some(user.id);
                                                             view! {
                                                                 <UserRow
                                                                     user=user
+                                                                    can_manage=can_manage
+                                                                    is_self=is_self
                                                                     on_edit=on_edit
                                                                     on_delete=on_delete
                                                                 />
@@ -153,6 +152,13 @@ pub fn UsersListPage() -> impl IntoView {
                                         }.into_any()
                                     }
                                 }
+                                // Con errores tipados la UI puede reaccionar a cada caso.
+                                Err(AppError::Unauthorized) => view! {
+                                    <div class="error-state">
+                                        <p>"Tu sesión ha expirado. "</p>
+                                        <a href="/login" class="btn btn-primary">"Iniciar sesión"</a>
+                                    </div>
+                                }.into_any(),
                                 Err(e) => view! {
                                     <div class="error-state">
                                         <p>"Error cargando usuarios: " {e.to_string()}</p>
@@ -170,6 +176,7 @@ pub fn UsersListPage() -> impl IntoView {
                         view! {
                             <UserModal
                                 mode=mode
+                                current_user_id=current_user_id.get_untracked()
                                 on_save=on_modal_save
                                 on_close=on_modal_close
                             />

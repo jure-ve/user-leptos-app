@@ -27,6 +27,8 @@ tower = { version = "0.5", optional = true }
 uuid = { version = "1", features = ["v4"], optional = true }
 chrono = { version = "0.4", optional = true }
 time = { version = "0.3", optional = true }
+thiserror = "2"
+http = "1"
 
 [features]
 hydrate = [
@@ -125,3 +127,13 @@ lib-default-features = false
 #
 # Optional. Defaults to "release".
 lib-profile-release = "wasm-release"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+# Los tests de integración levantan el router de Axum: solo existen con `ssr`.
+[[test]]
+name = "authorization"
+required-features = ["ssr"]

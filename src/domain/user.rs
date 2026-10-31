@@ -19,6 +19,10 @@ pub enum UserRole {
 }
 
 impl UserRole {
+    pub fn is_admin(&self) -> bool {
+        matches!(self, UserRole::Admin)
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             UserRole::Admin => "admin",

@@ -1,118 +1,68 @@
+use crate::api::auth::{get_current_user, Login, Logout};
+use crate::domain::error::AppError;
 use crate::domain::state::AuthState;
-use crate::domain::user::{LoginCredentials, User};
+use crate::domain::user::User;
 use leptos::prelude::*;
 
-// Server function for login
-#[server(Login, "/api")]
-pub async fn login(credentials: LoginCredentials) -> Result<User, ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        crate::server::auth::login(credentials).await
-    }
-    #[cfg(not(feature = "ssr"))]
-    {
-        Err(ServerFnError::new("SSR only"))
-    }
-}
-
-// Server function for logout
-#[server(Logout, "/api")]
-pub async fn logout() -> Result<(), ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        crate::server::auth::logout().await
-    }
-    #[cfg(not(feature = "ssr"))]
-    {
-        Err(ServerFnError::new("SSR only"))
-    }
-}
-
-// Server function to get current user
-#[server(GetCurrentUser, "/api")]
-pub async fn get_current_user() -> Result<Option<User>, ServerFnError> {
-    #[cfg(feature = "ssr")]
-    {
-        crate::server::auth::get_current_user().await
-    }
-    #[cfg(not(feature = "ssr"))]
-    {
-        Err(ServerFnError::new("SSR only"))
-    }
-}
-
-/// Authentication context that lives at the root of the app
-#[derive(Clone)]
+/// Contexto de autenticación global.
+///
+/// La sesión se obtiene con un `Resource` que se vuelve a pedir cada vez que
+/// termina un login o un logout (`version()` de cada acción). A diferencia de
+/// sincronizar un `RwSignal` con `Effect`s (que solo corren en el navegador),
+/// un `Resource` se resuelve también durante el SSR: el HTML llega ya con el
+/// usuario correcto y `<ProtectedRoute>` puede redirigir desde el servidor.
+#[derive(Clone, Copy)]
 pub struct AuthContext {
-    pub state: RwSignal<AuthState>,
-    pub login_action: Action<LoginCredentials, Result<User, ServerFnError>>,
-    pub logout_action: Action<(), Result<(), ServerFnError>>,
+    pub login: ServerAction<Login>,
+    pub logout: ServerAction<Logout>,
+    pub session: Resource<Result<Option<User>, AppError>>,
 }
 
 impl AuthContext {
-    pub fn is_authenticated(&self) -> bool {
-        self.state.get().is_authenticated()
+    /// Estado actual. Debe leerse dentro de `<Suspense/>` o `<Transition/>`.
+    pub fn state(&self) -> AuthState {
+        match self.session.get() {
+            None => AuthState::Loading,
+            Some(Ok(Some(user))) => AuthState::Authenticated(user),
+            Some(_) => AuthState::Unauthenticated,
+        }
     }
 
     pub fn user(&self) -> Option<User> {
-        self.state.get().user().cloned()
+        self.state().user().cloned()
+    }
+
+    /// `Some(true)` con sesión, `Some(false)` sin ella y `None` mientras carga.
+    /// Es justo la firma que espera `condition` en `<ProtectedRoute/>`.
+    pub fn is_authenticated(&self) -> Option<bool> {
+        match self.state() {
+            AuthState::Loading => None,
+            state => Some(state.is_authenticated()),
+        }
     }
 }
 
-/// Hook to get the AuthContext from any component
-pub fn use_auth() -> AuthContext {
-    use_context::<AuthContext>().expect("AuthContext not found. Wrap your app in AuthProvider.")
-}
+/// Crea el contexto de autenticación y lo provee a todo el árbol.
+/// Se llama una vez en la raíz de la aplicación.
+pub fn provide_auth() -> AuthContext {
+    let login = ServerAction::<Login>::new();
+    let logout = ServerAction::<Logout>::new();
 
-/// Provider component that wraps the app and provides AuthContext
-#[component]
-pub fn AuthProvider(children: Children) -> impl IntoView {
-    let state = RwSignal::new(AuthState::Loading);
-
-    // Action for login
-    let login_action = Action::new(move |credentials: &LoginCredentials| {
-        let credentials = credentials.clone();
-        async move { login(credentials).await }
-    });
-
-    // Action for logout
-    let logout_action = Action::new(move |_: &()| async move { logout().await });
-
-    // Effect to update state when login succeeds
-    Effect::new(move |_| {
-        if let Some(Ok(user)) = login_action.value().get() {
-            state.set(AuthState::Authenticated(user));
-        } else if let Some(Err(_)) = login_action.value().get() {
-            state.set(AuthState::Unauthenticated);
-        }
-    });
-
-    // Effect to update state when logout succeeds
-    Effect::new(move |_| {
-        if let Some(Ok(())) = logout_action.value().get() {
-            state.set(AuthState::Unauthenticated);
-        }
-    });
-
-    // Check session on mount using Resource
-    let initial_session = Resource::new(|| (), |_| async move { get_current_user().await });
-
-    Effect::new(move |_| {
-        if let Some(result) = initial_session.get() {
-            match result {
-                Ok(Some(user)) => state.set(AuthState::Authenticated(user)),
-                _ => state.set(AuthState::Unauthenticated),
-            }
-        }
-    });
+    let session = Resource::new(
+        move || (login.version().get(), logout.version().get()),
+        |_| get_current_user(),
+    );
 
     let context = AuthContext {
-        state,
-        login_action,
-        logout_action,
+        login,
+        logout,
+        session,
     };
-
     provide_context(context);
+    context
+}
 
-    children()
+/// Hook para obtener el `AuthContext` desde cualquier componente.
+pub fn use_auth() -> AuthContext {
+    use_context::<AuthContext>().expect("AuthContext not found. Call provide_auth() in App.")
 }

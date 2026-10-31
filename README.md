@@ -17,13 +17,21 @@ Aplicación full-stack con **Leptos 0.9** que demuestra autenticación con cooki
 src/
 ├── domain/           # Modelos compartidos (isomórfico)
 │   ├── user.rs       # User, LoginCredentials, etc.
+│   ├── error.rs      # AppError: errores tipados con código HTTP
+│   ├── policy.rs     # Reglas de autorización (servidor + UI)
 │   ├── state.rs      # AuthState, FormState
 │   └── validation.rs # Validaciones
 │
+├── api/              # Server functions: la frontera de seguridad
+│   ├── auth.rs       # login, logout, current_user
+│   └── users.rs      # CRUD con guards y políticas
+│
 ├── server/           # Lógica del servidor (#[cfg(feature = "ssr")])
-│   ├── db.rs         # SQLite pool, schema
-│   ├── auth.rs       # Login, logout, sesiones
-│   └── users.rs      # Operaciones CRUD
+│   ├── app.rs        # build_router (usado por main y por los tests)
+│   ├── db.rs         # Pool (inyectado por contexto), schema
+│   ├── guards.rs     # require_user / require_admin
+│   ├── session.rs    # Sesiones y cookie
+│   └── users.rs      # Repositorio de usuarios
 │
 ├── frontend/         # Componentes UI
 │   ├── state/        # AuthContext (estado global)
@@ -75,8 +83,26 @@ cargo check --features hydrate
 # Build de producción
 cargo leptos build --release
 
-# Ejecutar tests
-cargo test
+# Ejecutar tests (unitarios + integración de autorización)
+cargo test --features ssr
+```
+
+## Autorización
+
+Cada server function es un endpoint HTTP público, así que todas empiezan
+igual: **autenticación → autorización → validación → repositorio**.
+
+| Endpoint | Anónimo | Usuario | Admin |
+|----------|---------|---------|-------|
+| `POST /api/list_users` | 401 | ✅ | ✅ |
+| `POST /api/create_user` | 401 | 403 | ✅ |
+| `POST /api/update_user` | 401 | 403 | ✅ (no puede quitarse su rol) |
+| `POST /api/delete_user` | 401 | 403 | ✅ (no puede borrarse a sí mismo) |
+
+```bash
+# Sin sesión, el servidor rechaza la petición aunque no pase por la UI
+curl -i -X POST http://127.0.0.1:3000/api/delete_user -d id=2
+# HTTP/1.1 401 Unauthorized
 ```
 
 ## Dependencias Principales
@@ -126,7 +152,7 @@ CREATE TABLE users (
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
     user_id INTEGER REFERENCES users(id),
-    expires_at TEXT NOT NULL
+    expires_at DATETIME NOT NULL -- 'YYYY-MM-DD HH:MM:SS' (UTC)
 );
 ```
 
@@ -136,7 +162,7 @@ CREATE TABLE sessions (
 |------|-------------|
 | `/` | Página de inicio |
 | `/login` | Formulario de login |
-| `/users` | Gestión de usuarios (requiere auth) |
+| `/users` | Gestión de usuarios (requiere sesión; 302 a `/login` desde el servidor) |
 
 ## Documentación y Recursos
 

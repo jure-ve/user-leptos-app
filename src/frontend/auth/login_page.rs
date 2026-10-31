@@ -1,22 +1,12 @@
-use crate::domain::state::AuthState;
 use crate::frontend::auth::login_form::LoginForm;
-use crate::frontend::state::use_auth;
 use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
 
-/// Login page component
+/// Login page component.
+///
+/// La redirección a `/users` cuando ya hay sesión la hace `<ProtectedRoute/>`
+/// en `app.rs`, tanto en el servidor como tras el login en el cliente.
 #[component]
 pub fn LoginPage() -> impl IntoView {
-    let auth = use_auth();
-    let navigate = use_navigate();
-
-    // Redirect to users page if already authenticated
-    Effect::new(move |_| {
-        if let AuthState::Authenticated(_) = auth.state.get() {
-            navigate("/users", Default::default());
-        }
-    });
-
     view! {
         <div class="login-page">
             <div class="login-container">

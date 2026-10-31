@@ -5,6 +5,11 @@ use leptos::prelude::*;
 #[component]
 pub fn UserRow(
     user: User,
+    /// Si el usuario actual puede editar/eliminar (regla de `domain::policy`).
+    #[prop(into)]
+    can_manage: Signal<bool>,
+    /// Si la fila corresponde al usuario autenticado.
+    is_self: bool,
     on_edit: Callback<User>,
     on_delete: Callback<i64>,
 ) -> impl IntoView {
@@ -18,7 +23,10 @@ pub fn UserRow(
     view! {
         <tr class="user-row">
             <td class="user-id">{user.id}</td>
-            <td class="user-username">{username}</td>
+            <td class="user-username">
+                {username}
+                {is_self.then(|| view! { " (tú)" })}
+            </td>
             <td class="user-email">{email}</td>
             <td class="user-role">
                 <span class=role_class>
@@ -26,18 +34,29 @@ pub fn UserRow(
                 </span>
             </td>
             <td class="user-actions">
-                <button
-                    class="btn btn-sm btn-secondary"
-                    on:click=move |_| on_edit.run(user_for_edit.clone())
+                <Show
+                    when=move || can_manage.get()
+                    fallback=|| view! { <span class="text-muted">"Solo lectura"</span> }
                 >
-                    "Editar"
-                </button>
-                <button
-                    class="btn btn-sm btn-danger"
-                    on:click=move |_| on_delete.run(user_id)
-                >
-                    "Eliminar"
-                </button>
+                    <button
+                        class="btn btn-sm btn-secondary"
+                        on:click={
+                            let user_for_edit = user_for_edit.clone();
+                            move |_| on_edit.run(user_for_edit.clone())
+                        }
+                    >
+                        "Editar"
+                    </button>
+                    <button
+                        class="btn btn-sm btn-danger"
+                        // Coherente con `policy::can_delete_user`: nadie se borra a sí mismo.
+                        disabled=is_self
+                        title=if is_self { "No puedes eliminar tu propia cuenta" } else { "" }
+                        on:click=move |_| on_delete.run(user_id)
+                    >
+                        "Eliminar"
+                    </button>
+                </Show>
             </td>
         </tr>
     }

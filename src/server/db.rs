@@ -1,18 +1,29 @@
+use crate::domain::error::AppError;
+use leptos::prelude::*;
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
-use std::sync::OnceLock;
 
-/// Global database pool
-static DB_POOL: OnceLock<SqlitePool> = OnceLock::new();
-
-/// Initialize the database pool
-/// Should be called once at application startup
-pub async fn init_db() -> Result<(), sqlx::Error> {
+/// Crea el pool de conexiones, aplica el esquema y siembra el admin por defecto.
+///
+/// El pool ya no vive en un `static OnceLock`: se crea en `main` y se inyecta
+/// en cada petición mediante el contexto de Leptos (ver `server::app`). Esto
+/// permite que los tests usen su propia base de datos en memoria.
+pub async fn connect(url: &str) -> Result<SqlitePool, sqlx::Error> {
     let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect("sqlite:data.db?mode=rwc")
+        // SQLite en memoria crea una BD distinta por conexión; con una sola
+        // conexión los tests comparten la misma base de datos.
+        .max_connections(if url.contains(":memory:") { 1 } else { 5 })
+        .connect(url)
         .await?;
 
-    // Run migrations to create tables
+    migrate(&pool).await?;
+    seed_admin(&pool).await?;
+    Ok(pool)
+}
+
+/// Crea las tablas si no existen.
+pub async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    // Nota: sqlx activa `PRAGMA foreign_keys` por defecto en cada conexión,
+    // así que `ON DELETE CASCADE` funciona.
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS users (
@@ -25,10 +36,11 @@ pub async fn init_db() -> Result<(), sqlx::Error> {
         )
         "#,
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
-    // Create sessions table for cookie-based auth
+    // `expires_at` se guarda en el formato nativo de SQLite
+    // ('YYYY-MM-DD HH:MM:SS', UTC) para poder compararlo con datetime('now').
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS sessions (
@@ -39,35 +51,51 @@ pub async fn init_db() -> Result<(), sqlx::Error> {
         )
         "#,
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
-    // Insert default admin user if not exists
-    let admin_exists: Option<(i64,)> =
-        sqlx::query_as("SELECT id FROM users WHERE username = 'admin'")
-            .fetch_optional(&pool)
-            .await?;
-
-    if admin_exists.is_none() {
-        let password_hash = bcrypt::hash("admin123", bcrypt::DEFAULT_COST)
-            .expect("Failed to hash password");
-        sqlx::query(
-            "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
-        )
-        .bind("admin")
-        .bind("admin@example.com")
-        .bind(password_hash)
-        .bind("admin")
-        .execute(&pool)
-        .await?;
-    }
-
-    DB_POOL.set(pool).expect("Database already initialized");
     Ok(())
 }
 
-/// Get the database pool
-/// Panics if called before init_db()
-pub fn get_pool() -> &'static SqlitePool {
-    DB_POOL.get().expect("Database not initialized. Call init_db() first.")
+async fn seed_admin(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let admin_exists: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM users WHERE username = 'admin'")
+            .fetch_optional(pool)
+            .await?;
+
+    if admin_exists.is_none() {
+        let password_hash =
+            bcrypt::hash("admin123", bcrypt::DEFAULT_COST).expect("Failed to hash password");
+        sqlx::query("INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)")
+            .bind("admin")
+            .bind("admin@example.com")
+            .bind(password_hash)
+            .bind("admin")
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Obtiene el pool desde el contexto de la petición actual.
+pub fn pool() -> Result<SqlitePool, AppError> {
+    use_context::<SqlitePool>().ok_or_else(|| {
+        leptos::logging::error!("SqlitePool no encontrado en el contexto");
+        AppError::Internal
+    })
+}
+
+/// Los errores de base de datos nunca se envían tal cual al cliente: pueden
+/// filtrar detalles del esquema. Se registran y se devuelve un error genérico,
+/// salvo las violaciones de unicidad, que sí son un error "de negocio".
+impl From<sqlx::Error> for AppError {
+    fn from(err: sqlx::Error) -> Self {
+        if let Some(db_err) = err.as_database_error() {
+            if db_err.is_unique_violation() {
+                return AppError::Conflict("El usuario o email ya existe".into());
+            }
+        }
+        leptos::logging::error!("Database error: {err}");
+        AppError::Internal
+    }
 }
